@@ -365,6 +365,75 @@ Erros:    ausentes em VIEW MESSAGES
 
 Execute um teste controlado de `INSERT`, `UPDATE` e `DELETE` na origem e confirme o resultado no destino. Registre o horário, a chave do registro e o lag observado.
 
+## 13. Sugestões de desempenho e monitoramento
+
+Use estas sugestões como ponto de partida para ambientes SQL Server. Meça lag, CPU, I/O, uso de memória e tempo de commit antes de elevar valores em produção.
+
+> No OCI GoldenGate, o assistente cria os parâmetros estruturais, como `EXTRACT`, `USERIDALIAS`, trail e checkpoint. Não os duplique no arquivo de parâmetros.
+
+### Extract CDC
+
+Exemplo de parâmetros adicionais para um Extract chamado `ECDC`:
+
+```text
+REPORTCOUNT EVERY 5 MINUTES, RATE
+REPORTROLLOVER AT 00:05
+
+WARNLONGTRANS 1H, CHECKINTERVAL 10M
+
+TRANLOGOPTIONS TRANCOUNT 20
+
+DISCARDFILE ./dirrpt/ECDC.dsc, APPEND
+DISCARDROLLOVER AT 00:10
+
+TABLE dbo.CLIENTE;
+TABLE dbo.PEDIDO;
+TABLE dbo.ITEM_PEDIDO;
+```
+
+| Parâmetro | Finalidade |
+|---|---|
+| `REPORTCOUNT EVERY 5 MINUTES, RATE` | Registra volume processado, taxa total e taxa do intervalo. |
+| `REPORTROLLOVER` | Faz a rotação diária do report para facilitar retenção e análise. |
+| `WARNLONGTRANS` | Alerta transações abertas por muito tempo, que podem gerar lag e retenção de CDC. |
+| `TRANLOGOPTIONS TRANCOUNT 20` | SQL Server: lê 20 transações CDC por chamada. Comece com `20`; avalie `30` ou `50` somente com base em métricas. |
+| `DISCARDFILE` e `DISCARDROLLOVER` | Preservam erros de processamento sem permitir crescimento indefinido do arquivo. |
+
+### Replicat
+
+Exemplo de parâmetros adicionais para um Replicat chamado `RCDC`:
+
+```text
+REPORTCOUNT EVERY 5 MINUTES, RATE
+REPORTROLLOVER AT 00:15
+
+DISCARDFILE ./dirrpt/RCDC.dsc, APPEND
+DISCARDROLLOVER AT 00:20
+
+BATCHSQL
+GROUPTRANSOPS 1000
+
+MAP dbo.CLIENTE, TARGET dbo.CLIENTE;
+MAP dbo.PEDIDO, TARGET dbo.PEDIDO;
+MAP dbo.ITEM_PEDIDO, TARGET dbo.ITEM_PEDIDO;
+```
+
+| Parâmetro | Finalidade |
+|---|---|
+| `BATCHSQL` | Agrupa SQLs semelhantes e tende a aumentar o throughput no destino SQL Server. |
+| `GROUPTRANSOPS 1000` | Reduz commits e I/O de checkpoint para lotes de transações pequenas. Não aumente arbitrariamente, pois pode elevar o lag. |
+| `REPORTCOUNT` | Permite comparar a taxa de apply com a taxa de captura. |
+| `DISCARDFILE` | Registra conflitos, duplicidades, registros ausentes e erros SQL. |
+| `MAP` | Define o mapeamento de objetos origem/destino. |
+
+### Cuidados operacionais
+
+- Não mantenha `HANDLECOLLISIONS` em operação contínua; use-o apenas em carga inicial ou cutover controlado, quando aplicável.
+- Não configure `REPERROR ... IGNORE` genericamente: isso pode ocultar perda de dados.
+- O padrão de `CHECKPOINTSECS` é `10`; não o altere sem evidência de gargalo e validação de impacto em recuperação.
+- Em caso de lag no destino, teste `BATCHSQL` antes de ajustar `GROUPTRANSOPS` ou `TRANCOUNT`.
+- Configure uma checkpoint table no destino e acompanhe `INFO ALL`, `VIEW MESSAGES`, lag, reports e discard files.
+
 ## Troubleshooting rápido
 
 | Sintoma | Causa provável | Ação |
