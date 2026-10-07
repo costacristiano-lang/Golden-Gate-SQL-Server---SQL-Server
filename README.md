@@ -6,19 +6,25 @@ Guia genérico para configurar replicação SQL Server-to-SQL Server com OCI Gol
 
 ## Arquitetura
 
-```text
-SQL Server origem
-        |
-        | Extract / CDC
-        v
-OCI GoldenGate Deployment (Microsoft SQL Server)
-        |
-        | Distribution Path
-        v
-SQL Server destino
-        |
-        v
-Replicat
+```mermaid
+flowchart LR
+    SRC[("SQL Server origem")]
+    TGT[("SQL Server destino")]
+    subgraph INITIAL["Carga inicial"]
+        COPY["Cópia consistente<br/>backup / restore, export / import<br/>ou Extract de carga inicial"]
+    end
+    subgraph CDC["Sincronização contínua"]
+        EX["Extract SQL Server<br/>CDC"]
+        TL["Trail local"]
+        DP["Distribution Path"]
+        TR["Trail recebido"]
+        REP["Replicat"]
+        EX --> TL --> DP --> TR --> REP
+    end
+    SRC --> COPY --> TGT
+    SRC --> EX
+    REP --> TGT
+    COPY -. "Coordenar ponto de captura e aplicação" .-> EX
 ```
 
 Um único Deployment pode conter Extract e Replicat para cenários simples. Para produção, avalie Deployments separados conforme volume, isolamento, disponibilidade e operação.
